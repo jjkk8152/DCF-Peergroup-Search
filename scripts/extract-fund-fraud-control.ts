@@ -13,8 +13,11 @@
  *   npx tsx scripts/extract-fund-fraud-control.ts --input companies.txt --from 2023 --to 2025
  *   npx tsx scripts/extract-fund-fraud-control.ts --input companies.txt --out ./fund-fraud-out
  *
+ *   윈도우: scripts\extract-fund-fraud-control.bat 더블클릭 (또는 목록 파일을 bat 위로 드래그).
+ *
  *   회사 식별자: 종목코드(6자리) / DART corp_code(8자리) / 회사명(정확 일치 우선) 모두 가능.
  *   --input 파일은 한 줄에 하나 (쉼표/탭 구분 시 첫 칸만 사용, # 주석 허용).
+ *     인코딩 자동 판별(UTF-8/UTF-16/CP949), 엑셀이 지운 앞자리 0도 복원.
  *   --from/--to: 사업연도(회계연도) 범위. 기본값 2023 ~ (올해-1).
  *
  * 출력 (--out, 기본 ./fund-fraud-control-output):
@@ -54,6 +57,8 @@ interface CliOptions {
   fromYear: number;
   toYear: number;
   outDir: string;
+  /** 입력 파일 첫 줄의 companies 인덱스 (엑셀 CSV 헤더 행 판별용), 없으면 -1 */
+  headerIndex: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -63,12 +68,16 @@ function parseArgs(argv: string[]): CliOptions {
   let toYear = thisYear - 1;
   let outDir = path.resolve(process.cwd(), "fund-fraud-control-output");
 
+  let inputFile: string | null = null;
+  let headerIndex = -1;
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--input") {
-      const file = argv[++i];
-      for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-        const v = line.replace(/#.*/, "").split(/[,\t]/)[0].trim();
+      inputFile = argv[++i];
+      if (headerIndex < 0) headerIndex = companies.length;
+      for (const line of readTextAuto(inputFile).split(/\r?\n/)) {
+        const v = line.replace(/#.*/, "").split(/[,\t]/)[0].replace(/^"|"$/g, "").trim();
         if (v) companies.push(v);
       }
     } else if (a === "--from") fromYear = parseInt(argv[++i], 10);
@@ -77,10 +86,29 @@ function parseArgs(argv: string[]): CliOptions {
     else companies.push(a);
   }
   if (companies.length === 0) {
+    if (inputFile) console.error(`❌ 입력 파일에 회사가 없습니다: ${inputFile}`);
     console.error("사용법: npx tsx scripts/extract-fund-fraud-control.ts [--input file] [--from 2023] [--to 2025] [--out dir] <회사...>");
     process.exit(1);
   }
-  return { companies, fromYear, toYear, outDir };
+  if (!Number.isInteger(fromYear) || !Number.isInteger(toYear) || fromYear > toYear) {
+    console.error(`❌ 사업연도 범위가 잘못되었습니다: --from ${fromYear} --to ${toYear}`);
+    process.exit(1);
+  }
+  return { companies, fromYear, toYear, outDir, headerIndex };
+}
+
+/**
+ * 입력 파일 인코딩 자동 판별. 윈도우 메모장(구버전 ANSI)·엑셀 CSV 기본 저장은 CP949라
+ * UTF-8로만 읽으면 한글 회사명이 깨진다. UTF-8(BOM 포함) → UTF-16LE(BOM) → CP949 순.
+ */
+function readTextAuto(file: string): string {
+  const buf = fs.readFileSync(file);
+  if (buf[0] === 0xff && buf[1] === 0xfe) return new TextDecoder("utf-16le").decode(buf);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder("euc-kr").decode(buf); // WHATWG euc-kr = windows-949
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -98,8 +126,12 @@ function loadCorpCodes(): CorpCodeEntry[] {
 
 function resolveCompany(query: string, entries: CorpCodeEntry[]): CorpCodeEntry | null {
   const q = query.trim();
-  if (/^\d{8}$/.test(q)) return entries.find((e) => e.corp_code === q) ?? null;
-  if (/^[0-9A-Z]{6}$/.test(q)) return entries.find((e) => e.stock_code && e.stock_code.padStart(6, "0") === q) ?? null;
+  const byStock = (code: string) => entries.find((e) => e.stock_code && e.stock_code.padStart(6, "0") === code) ?? null;
+  const byCorp = (code: string) => entries.find((e) => e.corp_code === code) ?? null;
+  if (/^\d{8}$/.test(q)) return byCorp(q);
+  if (/^[0-9A-Z]{6}$/.test(q)) return byStock(q);
+  // 엑셀이 앞자리 0을 지운 경우 (005930 → 5930, 00126380 → 126380): 종목코드 → 고유번호 순으로 복원
+  if (/^\d{1,7}$/.test(q)) return (q.length <= 6 ? byStock(q.padStart(6, "0")) : null) ?? byCorp(q.padStart(8, "0"));
   // 회사명: 상장사 정확 일치 > 정확 일치 > 상장사 부분 일치
   const norm = (s: string) => s.replace(/\s|\(주\)|㈜|주식회사/g, "").toLowerCase();
   const nq = norm(q);
@@ -136,6 +168,10 @@ interface DartListDoc {
   rcept_dt: string;
 }
 
+/** 키/IP/한도 문제 — 다음 회사로 넘어가도 계속 실패하므로 즉시 중단 */
+class FatalDartError extends Error {}
+const FATAL_STATUS = new Set(["010", "011", "012", "020", "901"]);
+
 /** 사업보고서(A001) 목록. 사업연도 fromYear~toYear 보고서는 이듬해에 제출되므로 제출일 범위를 +1년. */
 async function listAnnualReports(corpCode: string, fromYear: number, toYear: number, key: string): Promise<DartListDoc[]> {
   const out: DartListDoc[] = [];
@@ -157,6 +193,7 @@ async function listAnnualReports(corpCode: string, fromYear: number, toYear: num
     );
     const d = res.data;
     if (d.status === "013") break; // 조회 데이터 없음
+    if (FATAL_STATUS.has(d.status)) throw new FatalDartError(`OpenDART 오류 ${d.status}: ${d.message}`);
     if (d.status !== "000") throw new Error(`list.json 오류 ${d.status}: ${d.message}`);
     out.push(...(d.list as DartListDoc[]));
     if (page >= Number(d.total_page ?? 1)) break;
@@ -175,9 +212,9 @@ async function downloadDocumentZip(rceptNo: string, key: string): Promise<AdmZip
     })
   );
   const buf = Buffer.from(res.data);
-  // 오류 시 ZIP이 아니라 XML/JSON 에러 메시지가 온다
-  if (buf.length < 1000 || buf.subarray(0, 2).toString() !== "PK") {
-    throw new Error(`document.xml 다운로드 실패: ${buf.toString("utf8").slice(0, 200)}`);
+  // 오류 시 ZIP이 아니라 XML 에러 메시지(<status>014</status> 등)가 온다 — 크기가 아니라 ZIP 시그니처로 판별
+  if (buf.subarray(0, 2).toString("latin1") !== "PK") {
+    throw new Error(`document.xml 다운로드 실패: ${buf.toString("utf8").replace(/\s+/g, " ").slice(0, 200)}`);
   }
   return new AdmZip(buf);
 }
@@ -222,8 +259,28 @@ function documentName(xml: string): string {
 const HEADING_RE =
   /(자\s*금\s*(관\s*련\s*)?부\s*정|횡\s*령\s*등\s*자\s*금|자\s*금\s*사\s*고)[^\n]{0,60}(통\s*제|예\s*방|적\s*발|위\s*험|의\s*사\s*소\s*통|점\s*검)/;
 const KEYWORD_RE = /자\s*금\s*(관\s*련\s*)?부\s*정|횡\s*령\s*등\s*자\s*금/g;
-// 다음 상위 제목: 로마숫자 / "Ⅳ." / "4." / "가." 류 시작 행 (단, 자금부정 관련 제목은 제외)
-const TOP_HEADING_RE = /^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|(?:X|IX|IV|V?I{1,3}|V))\s*[.．]\s*\S/;
+// 목차 행: 점선 리더 + 쪽번호 ("Ⅲ. 자금 부정 통제 ...... 5")
+const TOC_LINE_RE = /(?:\.{3,}|…+|·{3,}|-{3,})\s*\d*\s*$/;
+// 서술형 문장 끝 — 번호 없는 행은 이런 끝맺음이면 제목으로 보지 않는다
+const SENTENCE_END_RE = /(다|요|음|함|임)\s*[.。]?\s*$/;
+
+/** 제목 번호 체계 레벨: 1=Ⅰ./I., 2=1., 3=가., 4=(1)·1), 5=(가)·가), 0=번호 없음 */
+function headingLevel(line: string): number {
+  const l = line.trim();
+  if (/^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|X|IX|IV|V?I{1,3}|V)\s*[.．]\s*\S/.test(l)) return 1;
+  if (/^\d{1,2}\s*[.．]\s*[^\d\s]/.test(l)) return 2; // "2025.12" 같은 숫자는 제외
+  if (/^[가나다라마바사아자차카타파하]\s*[.．]\s*\S/.test(l)) return 3;
+  if (/^(?:\(\s*\d{1,2}\s*\)|\d{1,2}\s*\))\s*\S/.test(l)) return 4;
+  if (/^(?:\(\s*[가나다라마바사아자차카타파하]\s*\)|[가나다라마바사아자차카타파하]\s*\))\s*\S/.test(l)) return 5;
+  return 0;
+}
+
+/** 자금부정통제 섹션 제목 행인가: 키워드 + (번호 붙은 제목 | 짧은 비서술형 행). 표·목차 행 제외 */
+function isFundFraudHeading(line: string): boolean {
+  const l = line.trim();
+  if (l.length > 80 || l.includes("|") || TOC_LINE_RE.test(l) || !HEADING_RE.test(l)) return false;
+  return headingLevel(l) > 0 || (l.length <= 40 && !SENTENCE_END_RE.test(l));
+}
 
 export interface ExtractedSection {
   heading: string;
@@ -231,43 +288,43 @@ export interface ExtractedSection {
 }
 
 /**
- * 평문에서 자금부정통제 섹션 후보를 찾아 반환.
- * - 제목 행(짧은 행 + HEADING_RE)에서 시작 → 다음 로마숫자 상위 제목 전까지.
- * - 목차는 짧고 본문은 길기 때문에, 같은 제목이 여러 번 나오면 긴 쪽만 남긴다.
+ * 평문에서 자금부정통제 섹션을 찾아 반환.
+ * - 제목 행에서 시작 → 같은/상위 레벨 제목 전까지 (번호 없는 제목은 다음 대제목 Ⅰ. 까지).
+ *   하위 번호(1. 가. (1) 등)는 섹션 내부로 포함하고, 과다 수집은 MAX_SECTION_CHARS로 제한.
+ * - 목차 행(점선 리더)은 제목에서 제외, 같은 제목이 여러 번 나오면 가장 긴 것만 남긴다.
+ * - 짧은 공시("감사인과 ○월 ○일 의사소통함")도 있으므로 본문 20자 이상이면 채택.
  */
 export function extractFundFraudSections(text: string): ExtractedSection[] {
   const lines = text.split("\n");
   const found: ExtractedSection[] = [];
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i];
-    const isHeading = line.length <= 120 && !line.includes("|") && HEADING_RE.test(line);
-    if (!isHeading) {
+    if (!isFundFraudHeading(lines[i])) {
       i++;
       continue;
     }
+    const heading = lines[i].trim();
+    const level = headingLevel(heading) || 1;
     let j = i + 1;
     let len = 0;
     for (; j < lines.length; j++) {
-      const l = lines[j];
-      // 다음 상위 제목(로마숫자)에서 종료. 하위 번호(1. 가. 등)는 섹션 내부로 보고 계속 포함
-      // (덜 자르는 쪽이 안전 — 과다 수집은 MAX_SECTION_CHARS로 제한)
-      if (TOP_HEADING_RE.test(l) && !HEADING_RE.test(l)) break;
-      len += l.length + 1;
+      const lv = headingLevel(lines[j]);
+      // 연속된 자금부정 제목(예: 1. 통제활동 / 2. 실태점검)은 한 섹션으로 합친다
+      if (lv > 0 && lv <= level && !isFundFraudHeading(lines[j])) break;
+      len += lines[j].length + 1;
       if (len > MAX_SECTION_CHARS) break;
     }
-    const body = lines.slice(i, j).join("\n").trim();
-    found.push({ heading: line.trim(), text: body });
+    found.push({ heading, text: lines.slice(i, j).join("\n").trim() });
     i = j;
   }
-  // 목차성(짧은) 후보 제거: 동일 제목 중 가장 긴 것만, 그리고 본문 100자 미만 제거
   const byHeading = new Map<string, ExtractedSection>();
   for (const s of found) {
     const k = s.heading.replace(/\s/g, "");
     const prev = byHeading.get(k);
     if (!prev || s.text.length > prev.text.length) byHeading.set(k, s);
   }
-  return [...byHeading.values()].filter((s) => s.text.length - s.heading.length >= 100);
+  const bodyChars = (s: ExtractedSection) => s.text.slice(s.heading.length).replace(/\s/g, "").length;
+  return [...byHeading.values()].filter((s) => bodyChars(s) >= 20);
 }
 
 /** 제목을 못 찾았을 때 대비: 키워드 주변 문맥 스니펫 */
@@ -497,6 +554,10 @@ async function main() {
   for (const [idx, q] of opts.companies.entries()) {
     const corp = resolveCompany(q, corpCodes);
     const tag = `[${idx + 1}/${opts.companies.length}] ${q}`;
+    if (!corp && idx === opts.headerIndex && /회사|종목|코드|기업|name|code|corp/i.test(q)) {
+      console.log(`${tag} ↷ 헤더 행으로 보고 건너뜀`);
+      continue;
+    }
     if (!corp) {
       console.warn(`${tag} ❌ corp_code를 찾을 수 없음`);
       results.push({ query: q, corpCode: null, corpName: null, stockCode: null, years: [], error: "corp_code 매핑 실패" });
@@ -507,13 +568,18 @@ async function main() {
       results.push(r);
       console.log(`${tag} ${corp.corp_name}: ${r.years.map((y) => `${y.fiscalPeriod}=${y.status}`).join(", ")}`);
     } catch (e: any) {
+      if (e instanceof FatalDartError) {
+        writeOutputs(results, opts.outDir);
+        console.error(`❌ ${e.message} — API 키/IP 설정 또는 일일 한도를 확인하세요. 중단합니다.`);
+        process.exit(1);
+      }
       console.warn(`${tag} ❌ ${e.message}`);
       results.push({ query: q, corpCode: corp.corp_code, corpName: corp.corp_name, stockCode: corp.stock_code || null, years: [], error: e.message });
     }
     // 중간 저장 (대량 리스트 중단 대비)
     writeOutputs(results, opts.outDir);
   }
-  console.log(`✅ 완료 → ${opts.outDir}/{result.json, summary.csv, result.md}`);
+  console.log(`✅ 완료 → ${opts.outDir} (result.json, summary.csv, result.md)`);
 }
 
 if (require.main === module) {

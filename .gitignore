@@ -17,3 +17,6 @@ data/peer-snapshot/*.json
 !data/peer-snapshot/*.json.gz
 data/peer-snapshot/_progress/
 data/peer-snapshot/_shared/
+
+# 자금부정통제 추출 결과 / 회사 목록 (scripts/extract-fund-fraud-control.*)
+fund-fraud-control-output/
