@@ -31,6 +31,8 @@ Caches and builders (all under `data/`, loaded via `process.cwd()`-relative path
 - `data/business-cache/{year}.json.gz` — `scripts/collect-business-cache.ts` (full "사업의 내용" markdown).
 - `data/peer-snapshot/{quarter-end}.json.gz` — `scripts/collect-peer-snapshot.ts`; run shortly after each quarter-end (build lag loses delisted companies). Section slicing lives in `src/services/opendart/section-slicer.ts`; as-of report selection in `document-parser.ts` (`fetchBusinessContentAsOf`). After collecting, run `scripts/summarize-peer-snapshot.ts <date>` to add `overviewSummary`/`segmentsSummary` (LLM via `claude -p`, frozen once generated) and `segmentsBrief` (deterministic revenue-table slice, fallback) — `peergroup_get_population`'s default `content_mode="summary"` reads these fields (segmentsSummary → segmentsBrief → full text).
 
+Fraud/control disclosure mining (offline, not an MCP tool): `scripts/fraud-scan/` — `collect.ts` (list.json → document.xml ZIP → chunks → keyword-combination scoring from `keywords.json` → candidates with context) and `classify.ts` (Anthropic SDK structured outputs over candidate context only; verifies `evidence_text` against the source). See `scripts/fraud-scan/README.md`. `scripts/extract-fund-fraud-control.ts` (+ Windows `.bat`) extracts the 자금부정통제 section of 운영실태보고서 and shares `scripts/fraud-scan/lib/companies.ts`.
+
 Other files under `scripts/` are one-off diagnostics (`test-*`, `analyze-*`).
 
 Peer-group agent workflow (which tool at which step) is defined in `docs/PEER_GROUP_WORKFLOW.md` — tool descriptions route LLMs there, so keep it in sync when changing tool behavior.
