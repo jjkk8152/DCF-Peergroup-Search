@@ -2,7 +2,8 @@ node_modules
 .next
 .env*.local
 .omc
-.claude
+.claude/*
+!.claude/skills/
 .playwright-mcp
 
 .vercel

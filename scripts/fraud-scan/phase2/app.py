@@ -24,6 +24,7 @@ import fraud_scenario_engine  # noqa: E402
 import peer_selector  # noqa: E402
 import phase1_bridge  # noqa: E402
 import rcm_parser  # noqa: E402
+import visual_queue  # noqa: E402
 from db import DEFAULT_DB_PATH, REPO_ROOT, REVIEW_STATUSES, connect, rows, set_review, unj  # noqa: E402
 from engagement import EngagementProfile, list_engagements, load_engagement, save_engagement  # noqa: E402
 from export_excel import build_workbook  # noqa: E402
@@ -346,7 +347,7 @@ elif page == "3. Fraud Cases":
         p = load_engagement(conn, eid)
         peers = peer_selector.selected_peers(conn, eid)
         st.markdown(f"선택된 peer **{len(peers)}개** · 기간 {p.period_from} ~ {p.period_to}")
-        t1, t2 = st.tabs(["Phase 1 수집 실행 (OpenDART)", "기존 Phase 1 산출물 가져오기"])
+        t1, t2, t3 = st.tabs(["Phase 1 수집 실행 (OpenDART)", "기존 Phase 1 산출물 가져오기", "이미지 첨부 판독 목록"])
         with t1:
             st.caption("기존 Phase 1 엔진(scripts/fraud-scan/collect.ts)을 그대로 호출 — 제목이 아니라 공시 원문(본문+첨부)을 분석. DART_API_KEY(또는 OPENDART_API_KEY) 필요, Node.js 필요. 중단 후 재실행 시 이어서 처리.")
             if st.button("수집 실행", disabled=not peers):
@@ -367,6 +368,28 @@ elif page == "3. Fraud Cases":
             path = st.text_input("Phase 1 --out 폴더 (filings.csv, candidates.jsonl)", str(phase1_bridge.DEFAULT_OUT_ROOT / f"engagement_{eid}"))
             if st.button("가져오기"):
                 st.success(phase1_bridge.import_output(conn, eid, Path(path)))
+        with t3:
+            st.caption("스캔 이미지로만 첨부된 감사보고서·운영실태보고서 등은 API 텍스트로 읽을 수 없어, 수집된 원문 ZIP에서 자동으로 골라 판독 작업 목록을 만듭니다. "
+                       "판독은 맥에서 Claude Code 가 브라우저로 직접 열어 확대·전사합니다 (.claude/skills/dart-visual-extract). 추가 API 호출 없음.")
+            c1, c2 = st.columns([1, 3])
+            if c1.button("이미지 전용 첨부 탐지"):
+                st.success(visual_queue.scan(conn, eid))
+            if c2.button("판독 기록 → 사례 구조화로 가져오기"):
+                st.success(visual_queue.import_to_phase2(conn, eid))
+            vs = visual_queue.status_summary(conn, eid)
+            st.markdown(f"작업 {vs['total']}건 · 대기 {vs['todo']} · 진행 {vs['in_progress']} · 발견 {vs['done_found']} · 없음 {vs['done_nothing']} · "
+                        f"열람불가 {vs['not_available']} · 중단 {vs['blocked']} · 판독 기록 {vs['findings']}건")
+            vqs = visual_queue.queue(conn, eid)
+            if vqs:
+                st.dataframe(pd.DataFrame([{"우선순위": q["priority"], "회사": q["corp_name"], "공시": q["report_nm"], "첨부 문서": q["document_name"],
+                                            "이미지 수": q["image_count"], "상태": q["status"], "메모": q["status_note"], "뷰어": q["viewer_url"]} for q in vqs]),
+                             hide_index=True, use_container_width=True, column_config={"뷰어": st.column_config.LinkColumn()})
+                st.code(f"python scripts/fraud-scan/phase2/visual_queue.py next --engagement {eid}", language="bash")
+            for fd in rows(conn, "SELECT * FROM visual_findings WHERE engagement_id=? ORDER BY id DESC", [eid]):
+                with st.expander(f"{fd['rcept_no']} · {fd['page']} · {fd['section']} · 전사 신뢰도 {fd['transcription_confidence']}"):
+                    st.text(fd["transcription"])
+                    st.markdown(f"> {fd['evidence']}")
+                    st.caption(f"{fd['method']} · {fd['recorded_by']} · {fd['created_at']} {fd['notes'] or ''}")
         st.divider()
         if st.button("사례 구조화 · 시나리오 분류 실행" + (" (LLM 보조)" if llm else "")):
             with st.spinner("처리 중"):

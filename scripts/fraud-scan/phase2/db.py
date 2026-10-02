@@ -310,6 +310,44 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
 ]
 
+# v2: 이미지 전용 첨부(스캔본 감사보고서·운영실태보고서 등) 시각 판독 작업 목록과 판독 기록
+MIGRATIONS.append((
+    2,
+    """
+    CREATE TABLE visual_queue (
+        engagement_id INTEGER NOT NULL REFERENCES engagements(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,                 -- rcept_no + ZIP 엔트리
+        rcept_no TEXT NOT NULL,
+        corp_code TEXT, corp_name TEXT, report_nm TEXT, rcept_dt TEXT,
+        document_name TEXT,                    -- 첨부 문서명 (뷰어 '첨부' 목록에서 찾을 이름)
+        document_file TEXT,                    -- ZIP 엔트리명
+        image_count INTEGER, text_chars INTEGER,
+        reason TEXT,                           -- 탐지 사유
+        priority INTEGER,                      -- 1 운영실태·내부회계 / 2 감사보고서 / 3 기타
+        viewer_url TEXT,
+        status TEXT NOT NULL DEFAULT 'todo',   -- todo / in_progress / done_found / done_nothing / not_available / blocked
+        status_note TEXT,
+        updated_at TEXT,
+        PRIMARY KEY (engagement_id, item_id)
+    );
+    CREATE TABLE visual_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        engagement_id INTEGER NOT NULL REFERENCES engagements(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,
+        rcept_no TEXT NOT NULL,
+        page TEXT,                             -- 뷰어 페이지/위치 (예: '운영실태보고서 p.3')
+        section TEXT,
+        transcription TEXT NOT NULL,           -- 해당 부분 원문 전사 (판독 불가 글자는 [?])
+        evidence TEXT NOT NULL,                -- 근거 문장 (transcription 안에 그대로 있어야 함)
+        transcription_confidence TEXT,         -- high / medium / low
+        method TEXT,                           -- vision / vision+tesseract / text
+        notes TEXT,
+        recorded_by TEXT,
+        created_at TEXT
+    );
+    """,
+))
+
 # 검토 컬럼을 가진 테이블과 기본키 (review 업데이트 공용 함수용)
 REVIEWABLE_TABLES = {
     "peer_candidates": ("engagement_id", "corp_code"),

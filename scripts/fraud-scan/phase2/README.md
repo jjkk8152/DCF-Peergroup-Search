@@ -48,6 +48,22 @@ python -m pytest scripts/fraud-scan/phase2/tests -q     # 테스트
 4 Fraud Scenarios · 5 RCM Upload(컬럼 매핑) · 6 Additional Evidence(상충 정보) · 7 Coverage & Audit Response · 8 Review & Export.
 사이드바 "샘플 데이터로 데모 생성"으로 전체 흐름을 바로 볼 수 있다.
 
+## 이미지 첨부 시각 판독 (visual queue)
+
+감사보고서·내부회계관리제도 운영실태보고서가 사업보고서에 **스캔 이미지로만** 첨부되면 API 텍스트로는 내용을 얻을 수 없다.
+
+1. **탐지(자동, 추가 API 호출 없음)** — `visual_queue.py scan`: Phase 1 이 받아 둔 원문 ZIP 캐시를 다시 열어, 대상 문서
+   (운영실태·내부회계·평가보고서 = 우선순위 1, 감사·검토보고서 = 2)이면서 이미지 태그가 있고 본문 텍스트가 거의 없는 첨부를
+   `visual_queue`(DB v2)에 올린다. 텍스트가 있는 첨부는 Phase 1 이 이미 처리하므로 제외.
+2. **판독(맥에서 Claude Code)** — 저장소의 `.claude/skills/dart-visual-extract/SKILL.md` 절차대로 Claude 가 브라우저
+   (Claude in Chrome 또는 내장 브라우저)로 뷰어를 열고 첨부를 골라 확대·스크롤하며 관련 문단을 **글자 그대로 전사**해
+   `record` 한다(판독 불가 글자는 `[?]`, 근거 문장은 전사 안에서만 발췌 — 도구가 대조). 진행 상태는 todo → in_progress → done_found/done_nothing/not_available/blocked.
+3. **연결** — `visual_queue.py import`: 판독 기록을 Phase 1 형식으로 내보내 Phase 2 에 적재하고 사례 구조화까지 실행.
+   근거 위치는 `첨부파일 · 운영실태보고서 p.N` 으로 남는다. 앱 '3. Fraud Cases' → '이미지 첨부 판독 목록' 탭에서도 실행·확인 가능.
+
+맥에서 시작: Claude Code 에 "engagement 1 이미지 첨부 판독 진행해줘" → 스킬이 로드되어 scan → next → 판독·record → done 반복 → import.
+(선택) `visual_queue.py ocr <파일>` 로 tesseract(kor+eng) 판독과 교차 확인 (`brew install tesseract tesseract-lang poppler`).
+
 ## 환경 변수
 
 | 변수 | 용도 |
@@ -106,6 +122,8 @@ FS003 의 인증수단 요소는 '상충 정보 — Auditor follow-up required')
 - peer 규모 비교는 캐시에 있는 **시가총액**만 가능 — 매출·자산 기준 입력 시 규모 요소는 제외된다.
 - 해외법인 여부는 사업의 개요 문구 기준 추정이다.
 - 상충 정보 탐지는 현재 '보관·관리 주체' 유형만 지원한다.
+- 이미지 전용 판정은 DART XML 의 `<IMG>`/`<IMAGE>` 태그와 본문 글자 수 기준이다. 실제 공시로 아직 검증하지 못했으므로 첫 `scan` 결과(queued·text_available_targets)를 확인하고 임계값을 조정할 것.
+- 시각 판독은 Claude 의 화면 판독(전사)이며 OCR 오류 가능성이 있다 — 금액·직위는 감사인이 원문 이미지로 확인할 것(뷰어 링크·페이지 기록).
 - 실제 OpenDART 응답과 실제 Claude API 로는 이 개발 환경에서 테스트하지 못했다(네트워크·키 없음). 샘플·모의 응답으로 검증.
 - RCM 범위가 좁으면 'Not Covered' 는 RCM 범위 밖일 가능성을 포함한다(information_needed 에 표시).
 
