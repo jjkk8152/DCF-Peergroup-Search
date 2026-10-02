@@ -21,3 +21,5 @@ data/peer-snapshot/_shared/
 # 자금부정통제 추출 결과 / 회사 목록 (scripts/extract-fund-fraud-control.*)
 fund-fraud-control-output/
 fraud-scan-output/
+__pycache__/
+.pytest_cache/

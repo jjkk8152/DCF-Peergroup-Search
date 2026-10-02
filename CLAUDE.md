@@ -33,6 +33,8 @@ Caches and builders (all under `data/`, loaded via `process.cwd()`-relative path
 
 Fraud/control disclosure mining (offline, not an MCP tool): `scripts/fraud-scan/` — `collect.ts` (list.json → document.xml ZIP → chunks → keyword-combination scoring from `keywords.json` → candidates with context) and `classify.ts` (Anthropic SDK structured outputs over candidate context only; verifies `evidence_text` against the source). See `scripts/fraud-scan/README.md`. `scripts/extract-fund-fraud-control.ts` (+ Windows `.bat`) extracts the 자금부정통제 section of 운영실태보고서 and shares `scripts/fraud-scan/lib/companies.ts`.
 
+Phase 2 (Python, local only — not deployed): `scripts/fraud-scan/phase2/` — Streamlit + SQLite auditor tool (peer selection from `data/peer-snapshot`, fraud case structuring from Phase 1 `candidates.jsonl`, FS001–FS010 scenario library, RCM upload/mapping, coverage evaluation with guardrails, audit procedures, Excel export). It calls Phase 1 `collect.ts` via subprocess instead of duplicating it. Deterministic by default; LLM optional and can never upgrade a coverage verdict. Tests: `python -m pytest scripts/fraud-scan/phase2/tests -q`. See `scripts/fraud-scan/phase2/README.md`.
+
 Other files under `scripts/` are one-off diagnostics (`test-*`, `analyze-*`).
 
 Peer-group agent workflow (which tool at which step) is defined in `docs/PEER_GROUP_WORKFLOW.md` — tool descriptions route LLMs there, so keep it in sync when changing tool behavior.

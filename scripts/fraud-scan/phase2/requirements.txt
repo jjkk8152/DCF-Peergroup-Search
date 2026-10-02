@@ -1,0 +1,6 @@
+# Phase 2 (Python) — Phase 1(TypeScript)은 저장소 루트 package.json 사용
+streamlit>=1.40
+pandas>=2.1
+openpyxl>=3.1
+anthropic>=1.0   # 선택: LLM 보조 기능 사용 시
+pytest>=8        # 테스트

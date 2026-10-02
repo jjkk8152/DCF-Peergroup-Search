@@ -1,0 +1,10 @@
+﻿corp_name,stock_code,corp_code,rcept_no,rcept_dt,report_nm,status,documents,chunks,candidates,is_amendment,amends_rcept_no,original_rcept_no,is_latest,has_later_amendment,error,source_url
+[SAMPLE] 가상전장(주),990001,99000001,99990312900001,2025-03-12,횡령ㆍ배임혐의발생,ok,1,10,1,false,,99990312900001,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990312900001
+[SAMPLE] 예시모빌리티(주),990002,99000002,99990320000002,2025-03-20,감사보고서 (2024.12),ok,1,10,1,false,,99990320000002,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990320000002
+[SAMPLE] 테스트부품(주),990003,99000003,99990410000003,2025-04-10,사업보고서 (2024.12),ok,1,10,1,false,,99990410000003,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990410000003
+[SAMPLE] 샘플오토텍(주),990004,99000004,99990512900004,2025-05-12,횡령ㆍ배임혐의발생,ok,1,10,1,false,,99990512900004,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990512900004
+[SAMPLE] 가상전장(주),990001,99000001,99990318000005,2025-03-18,사업보고서 (2024.12),ok,1,10,1,false,,99990318000005,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990318000005
+[SAMPLE] 예시모빌리티(주),990002,99000002,99990321000006,2025-03-21,사업보고서 (2024.12),ok,1,10,1,false,,99990321000006,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990321000006
+[SAMPLE] 테스트부품(주),990003,99000003,99990702900007,2025-07-02,횡령ㆍ배임혐의발생,ok,1,10,1,false,,99990702900007,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990702900007
+[SAMPLE] 샘플오토텍(주),990004,99000004,99990815900008,2025-08-15,횡령ㆍ배임혐의발생,ok,1,10,1,false,,99990815900008,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990815900008
+[SAMPLE] 테스트부품(주),990003,99000003,99990901000009,2025-09-01,주요사항보고서(유상증자결정),ok,1,30,0,false,,99990901000009,true,false,,https://dart.fss.or.kr/dsaf001/main.do?rcpNo=99990901000009
