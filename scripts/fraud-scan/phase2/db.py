@@ -310,14 +310,14 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
 ]
 
-# v2: 이미지 전용 첨부(스캔본 감사보고서·운영실태보고서 등) 시각 판독 작업 목록과 판독 기록
+# v2: 스캔 이미지 첨부(감사보고서·운영실태보고서) DART 화면 판독 작업 목록(peer × 사업연도)과 판독 기록
 MIGRATIONS.append((
     2,
     """
     CREATE TABLE visual_queue (
         engagement_id INTEGER NOT NULL REFERENCES engagements(id) ON DELETE CASCADE,
-        item_id TEXT NOT NULL,                 -- rcept_no + ZIP 엔트리
-        rcept_no TEXT NOT NULL,
+        item_id TEXT NOT NULL,                 -- corp_code:FY사업연도
+        rcept_no TEXT NOT NULL,                -- 판독 시 DART 화면에서 확인한 접수번호 (계획 단계는 빈 값)
         corp_code TEXT, corp_name TEXT, report_nm TEXT, rcept_dt TEXT,
         document_name TEXT,                    -- 첨부 문서명 (뷰어 '첨부' 목록에서 찾을 이름)
         document_file TEXT,                    -- ZIP 엔트리명

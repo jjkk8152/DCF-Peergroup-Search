@@ -369,11 +369,11 @@ elif page == "3. Fraud Cases":
             if st.button("가져오기"):
                 st.success(phase1_bridge.import_output(conn, eid, Path(path)))
         with t3:
-            st.caption("스캔 이미지로만 첨부된 감사보고서·운영실태보고서 등은 API 텍스트로 읽을 수 없어, 수집된 원문 ZIP에서 자동으로 골라 판독 작업 목록을 만듭니다. "
-                       "판독은 맥에서 Claude Code 가 브라우저로 직접 열어 확대·전사합니다 (.claude/skills/dart-visual-extract). 추가 API 호출 없음.")
+            st.caption("감사보고서·운영실태보고서는 스캔 이미지로 첨부되어 OpenDART API로 받을 수 없습니다. 선택한 peer × 사업연도로 판독 작업 목록을 만들고, "
+                       "판독은 맥에서 Claude Code 가 DART 화면에서 직접 열어 확대·전사합니다 (.claude/skills/dart-visual-extract). OpenDART 수집 불필요.")
             c1, c2 = st.columns([1, 3])
-            if c1.button("이미지 전용 첨부 탐지"):
-                st.success(visual_queue.scan(conn, eid))
+            if c1.button("판독 작업 목록 생성 (선택 peer × 사업연도)", disabled=not peers):
+                st.success(visual_queue.plan(conn, eid))
             if c2.button("판독 기록 → 사례 구조화로 가져오기"):
                 st.success(visual_queue.import_to_phase2(conn, eid))
             vs = visual_queue.status_summary(conn, eid)
@@ -381,8 +381,8 @@ elif page == "3. Fraud Cases":
                         f"열람불가 {vs['not_available']} · 중단 {vs['blocked']} · 판독 기록 {vs['findings']}건")
             vqs = visual_queue.queue(conn, eid)
             if vqs:
-                st.dataframe(pd.DataFrame([{"우선순위": q["priority"], "회사": q["corp_name"], "공시": q["report_nm"], "첨부 문서": q["document_name"],
-                                            "이미지 수": q["image_count"], "상태": q["status"], "메모": q["status_note"], "뷰어": q["viewer_url"]} for q in vqs]),
+                st.dataframe(pd.DataFrame([{"우선순위": q["priority"], "회사": q["corp_name"], "보고서": q["report_nm"], "접수번호": q["rcept_no"] or "—",
+                                            "상태": q["status"], "메모": q["status_note"], "뷰어": q["viewer_url"]} for q in vqs]),
                              hide_index=True, use_container_width=True, column_config={"뷰어": st.column_config.LinkColumn()})
                 st.code(f"python scripts/fraud-scan/phase2/visual_queue.py next --engagement {eid}", language="bash")
             for fd in rows(conn, "SELECT * FROM visual_findings WHERE engagement_id=? ORDER BY id DESC", [eid]):

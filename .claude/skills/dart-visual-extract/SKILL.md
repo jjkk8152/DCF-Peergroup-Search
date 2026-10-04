@@ -5,8 +5,8 @@ description: DART 공시에 이미지(스캔본)로만 첨부된 감사보고서
 
 # DART 이미지 첨부 시각 판독 (Phase 2 visual queue)
 
-OpenDART API(document.xml)로는 스캔 이미지로 첨부된 감사보고서·운영실태보고서의 내용을 얻을 수 없다.
-이 스킬은 Phase 2가 자동으로 골라낸 **이미지 전용 첨부 목록**을 하나씩 사람처럼 열어 보고(클릭·스크롤·확대),
+감사보고서·운영실태보고서는 사업보고서에 스캔 이미지로 첨부되며 OpenDART API로는 받을 수 없다. OpenDART 는 쓰지 않는다.
+이 스킬은 **감사인이 선택한 peer × 사업연도 작업 목록**을 하나씩, DART 화면에서 사람처럼 찾아 열어 보고(클릭·스크롤·확대),
 관련 원문을 **글자 그대로 전사**해 기록한다. 기록은 기존 Phase 2 흐름(사례 구조화 → 시나리오 → RCM coverage)으로 이어진다.
 
 모든 명령은 저장소 루트에서 실행한다. `CMD = python scripts/fraud-scan/phase2/visual_queue.py`
@@ -17,29 +17,35 @@ OpenDART API(document.xml)로는 스캔 이미지로 첨부된 감사보고서·
    데스크톱 앱의 Computer use 만으로는 브라우저가 '읽기' 등급이라 클릭이 막힌다 — 브라우저 도구가 없으면
    사용자에게 Claude in Chrome 확장 연결(또는 내장 브라우저)을 요청하고 멈춘다. 해당 브라우저 스킬이 있으면 먼저 읽는다.
 2. **Python 의존성:** `pip install -r scripts/fraud-scan/phase2/requirements.txt`
-3. **engagement 와 Phase 1 수집 확인:** 사용자에게 engagement 번호를 묻거나 Phase 2 앱에서 확인한다.
-   peer 선택 후 Phase 1 수집(앱 '3. Fraud Cases' → 수집 실행, 또는 `npx tsx scripts/fraud-scan/collect.ts --corp … --out fraud-scan-output/phase2/engagement_N`)과
-   적재가 끝나 있어야 한다. ZIP 캐시는 `fraud-scan-output/_cache/zip/` 에 있다.
-4. **작업 목록 생성:** `$CMD scan --engagement N` → `queued` 가 0 이면 이미지 전용 대상 첨부가 없다는 뜻이니 사용자에게 보고하고 끝낸다.
+3. **engagement 확인:** 사용자에게 engagement 번호를 묻거나 Phase 2 앱에서 확인한다. Phase 2 앱 '2. Peer Selection'에서
+   peer 선택이 끝나 있어야 한다(선택 0개면 사용자에게 요청하고 멈춘다).
+4. **작업 목록 생성:** `$CMD plan --engagement N` → 선택 peer × 사업연도(분석기간에 제출된 사업보고서) 항목이 만들어진다.
+   특정 연도만 하려면 `--years 2024,2025`.
 
 ## 1. 반복 절차 (항목 하나씩, 탭 하나로)
 
-1. `$CMD next --engagement N` → 항목 JSON (`item_id`, `corp_name`, `report_nm`, `document_name`, `image_count`, `viewer_url`). 상태가 in_progress 로 바뀐다.
-2. 새 탭 하나에서 `viewer_url` 을 연다. 페이지가 다 뜰 때까지 기다리고 스크린샷으로 화면을 확인한다.
-3. 뷰어 상단의 **첨부(첨부선택) 목록** 또는 왼쪽 문서 목차에서 `document_name` 과 같은 문서를 고른다.
-   이름이 조금 다르면(예: "감사보고서" vs "연결감사보고서") 가장 가까운 것을 열고 notes 에 남긴다. 찾을 수 없으면 `not_available`.
-4. **모든 페이지를 읽는다.** 이미지 글자가 작으면 브라우저 확대(⌘ +) 또는 해당 영역 확대 스크린샷으로 글자가 또렷해질 때까지 키운다.
+1. `$CMD next --engagement N` → 항목 JSON (`item_id`, `corp_name`, `report_nm` 예: "사업보고서 (2025.12)"). 상태가 in_progress 로 바뀐다.
+   `rcept_no` 가 이미 있으면(중단 후 재개) `viewer_url` 을 바로 연다.
+2. 새 탭 하나에서 DART(https://dart.fss.or.kr) 첫 화면을 열고 `corp_name` 으로 회사를 검색해 해당 사업연도의 **사업보고서**를 연다.
+   정정 공시가 있으면 가장 최근 제출본을 연다. 같은 이름의 다른 회사가 아닌지 확인한다. 화면이 다 뜰 때까지 기다리고 스크린샷으로 확인한다.
+3. 뷰어 주소의 `rcpNo=` 뒤 14자리가 **접수번호**다 — 기록에 반드시 쓴다.
+4. 뷰어 상단의 **첨부(첨부선택) 목록** 또는 왼쪽 목차에서 대상 첨부를 차례로 연다:
+   감사보고서·연결감사보고서, 내부회계관리제도 운영실태보고서(평가보고서), 내부회계관리제도 감사(검토)보고서.
+   첨부가 하나도 없으면 `not_available`(note 에 화면 상태).
+5. **모든 페이지를 읽는다.** 이미지 글자가 작으면 브라우저 확대(⌘ +) 또는 해당 영역 확대 스크린샷으로 글자가 또렷해질 때까지 키운다.
    페이지를 건너뛰지 말고 끝까지 스크롤한다. 문서가 텍스트로 선택 가능하면 페이지 텍스트를 읽어도 된다(method=text).
-5. 다음 내용이 있는지 본다:
+6. 다음 내용이 있는지 본다:
    - 횡령·배임·자금 유용·무단 인출/이체, 사고 금액·기간·행위자 직위, 고소·수사
    - 내부회계관리제도 **중요한 취약점**·유의한 미비점, 비적정/부적정 검토·감사의견과 그 사유
    - **자금부정 통제** 항목(통제 활동, 실태점검 결과), OTP·인증서·인감·계좌·지급승인 관련 통제 미비
    - 감사보고서 강조사항·특수관계자 자금 거래·대여금/선급금 관련 서술
    - 개선계획·재발방지 조치, 감사인과의 의사소통
-6. 해당 내용이 있으면 **문단(또는 표 행) 단위로 글자 그대로 전사**해 기록한다. 앞뒤 문단 1개씩을 함께 전사한다.
+7. 해당 내용이 있으면 **문단(또는 표 행) 단위로 글자 그대로 전사**해 기록한다. 앞뒤 문단 1개씩을 함께 전사한다.
    ```bash
    $CMD record --engagement N <<'JSON'
    {"item_id": "<next 결과의 item_id>",
+    "rcept_no": "<뷰어 주소의 rcpNo 14자리>",
+    "report_nm": "사업보고서 (2025.12)",
     "page": "운영실태보고서 p.3",
     "section": "Ⅲ. 자금 부정 통제",
     "transcription": "전사한 원문 여러 줄 …",
@@ -50,9 +56,11 @@ OpenDART API(document.xml)로는 스캔 이미지로 첨부된 감사보고서·
    JSON
    ```
    한 문서에서 관련 부분이 여러 곳이면 `record` 를 여러 번 호출한다.
-7. 항목을 닫는다: 찾은 것이 있으면 `$CMD done --engagement N --item "<item_id>" --status done_found`,
-   끝까지 읽었는데 없으면 `--status done_nothing --note "전 7쪽 확인, 관련 서술 없음"`.
-8. 10건마다 `$CMD status --engagement N` 으로 진행 상황을 사용자에게 한 줄로 알린다.
+8. 항목을 닫는다 (확인을 마친 항목은 접수번호가 필수 — 무엇을 검토했는지 남기기 위해):
+   찾은 것이 있으면 `$CMD done --engagement N --item "<item_id>" --status done_found --rcept <접수번호>`,
+   끝까지 읽었는데 없으면 `--status done_nothing --rcept <접수번호> --note "감사보고서 12쪽·운영실태보고서 3쪽 확인, 관련 서술 없음"`.
+   해당 연도 사업보고서가 없으면(상장 전·상장폐지 등) `--status not_available --note "<사유>"`.
+9. 10건마다 `$CMD status --engagement N` 으로 진행 상황을 사용자에게 한 줄로 알린다.
 
 ## 2. 전사 원칙 (감사 추적성 — 반드시 지킨다)
 
